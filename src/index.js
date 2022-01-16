@@ -9,15 +9,23 @@ const customerList = [];
 function verifyIfExists(request, response, next) {
   const { cpf } = request.headers;
 
-  console.log("customerList: ", customerList)
-  console.log("cpf: ", cpf)
-
   const customer = customerList.find((customer) => customer.cpf == cpf);
 
   if (!customer) return response.status(400).json({ error: "customer not found" });
 
   request.customer = customer;
   return next();
+}
+
+function getBalance(statement) {
+  statement.reduce((acc, operation) => {
+    if (operation === 'credit') {
+      return acc + operation.amount;
+    } else if (operation === 'debit') {
+      return acc - operation.amount;
+    }
+    else return;
+  })
 }
 
 app.post("/account", (request, response) => {
@@ -33,18 +41,13 @@ app.post("/account", (request, response) => {
     cpf,
     name,
     id: uuidV4(),
-    statement: [],
+    statement: []
   });
 
   return response.status(201).send();
 });
 
-
-
 app.get("/statement", verifyIfExists, (request, response) => {
-
-
-  console.log("customer: ", request.customer)
 
   return response.json(request.customer.statement);
 });
@@ -56,7 +59,7 @@ app.post("/deposit", verifyIfExists, (request, response) => {
   const statementOperation = {
     description,
     amount,
-    created_At: new Date(),
+    created_at: new Date(),
     type: "credit"
   };
 
@@ -64,4 +67,60 @@ app.post("/deposit", verifyIfExists, (request, response) => {
 
   return response.status(201).send();
 });
+
+app.post("/withdraw", verifyIfExists, (request, response) => {
+  const { amount } = request.body;
+  const { customer } = request;
+
+  const balance = getBalance(customer.statement);
+
+  if (balance < amount) {
+    return response.status(400).json({ error: "insufficient funds" })
+  }
+
+  const statementOperation = {
+    amount,
+    created_at: new Date(),
+    type: "debit"
+  };
+
+  customer.statement.push(statementOperation);
+
+  return response.status(201).send();
+})
+
+app.get("/statement/:startDate", verifyIfExists, (request, response) => {
+  const { customer } = request;
+  const { date } = request.query;
+
+  const dateFormated = new Date(date + "00:00");
+
+  const statement = customer.statement.filter((statement) => statement.created_at.toDateString() === new Date(dateFormated).toDateString());
+
+  return response.json(statement);
+});
+
+app.put("/account", verifyIfExists, (request, response) => {
+  const { name } = request.body;
+  const { customer } = request;
+
+  customer.name = name;
+
+  return response.status(201).send();
+});
+
+app.get("/account", verifyIfExists, (request, response) => {
+  const { customer } = request;
+
+  return response.status(201).json(customer);
+});
+
+app.delete("/account", verifyIfExists, (request, response) => {
+  const { customer } = request;
+
+  customerList.splice(customer, 1);
+
+  return response.status(204).send();
+});
+
 app.listen(3333);
